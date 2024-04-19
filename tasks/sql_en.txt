@@ -1,0 +1,114 @@
+/-- 1. Download the data and create a pandemic schema in the database using SQL commands. Set it as the default schema using SQL commands. Import the data using the Import Wizard as you did in topic 3.
+File: infectious_cases.csv --/
+
+create schema if not exists pandemic;
+use pandemic;
+
+
+
+/-- 2. Normalize the infectious_cases table. Save two normalized tables in the same schema. --/
+
+use pandemic;
+
+create table countries(
+id int primary key auto_increment,
+code varchar(8) unique,
+country varchar(32) not null unique
+);
+
+insert into countries (code, country)
+select distinct code, entity from infectious_cases;
+
+create table infectious_cases_normalized 
+as select * from infectious_cases;
+
+alter table infectious_cases_normalized
+add id int primary key auto_increment first,
+add country_id int after id,
+add constraint fk_country_id foreign key (country_id) references countries(id);
+
+update infectious_cases_normalized i, countries c  
+set i.country_id = c.id where c.code = i.code;
+
+alter table infectious_cases_normalized
+drop column entity,
+drop column code;
+
+
+
+/-- 3. Analyze the data:
+For each unique combination of Entity and Code or their id, calculate the average, minimum, maximum values, and sum for the Number_rabies attribute.
+💡 Note that the Number_rabies attribute may contain empty values '' — you need to filter them out beforehand.
+Sort the result by the calculated average value in descending order.
+Select only 10 rows to display on the screen. --/
+
+select id, 
+max(number_rabies) as max_value, 
+min(number_rabies) as min_value,
+avg(number_rabies) as avg_value
+from infectious_cases_normalized
+where number_rabies is not null and number_rabies <> ''
+group by id
+order by avg_value desc
+limit 10;
+
+
+
+/-- 4. Build a column of year difference.
+For the original or normalized table, for the Year column, build using built-in SQL functions:
+
+an attribute that creates the date of the first of January of the corresponding year,
+💡 For example, if the attribute contains the value '1996', then the value of the new attribute should be '1996-01-01'.
+an attribute equal to the current date,
+an attribute equal to the difference in years between the two aforementioned columns.
+💡 You don't need to recount all other attributes, such as Number_malaria. --/
+
+select makedate(year, 1) as first_day_in_year,
+curdate() as current_year,
+timestampdiff(year, makedate(year, 1), curdate()) as difference_year
+from infectious_cases;
+
+
+
+/-- 5. Build your own function.
+Create and use a function that builds the same attribute as in the previous task: the function should take the year value as input and return the difference in years between the current date and the date created from the year attribute (1996 year → '1996-01-01'). --/
+
+drop function if exists calc_years_difference;
+
+delimiter //
+
+create function calc_years_difference(year int)
+returns int
+deterministic
+no sql
+begin
+declare result int;
+set result = year(curdate()) - year;
+return result;
+end //
+
+delimiter ;
+
+select calc_years_difference(1996);
+
+
+
+/-- 5*💡 If you haven't completed the previous task, you can build another function — a function that calculates the number of cases for a specific period. To do this, you need to divide the number of cases per year by a certain number: 12 — to get the average number of cases per month, 4 — per quarter, or 2 — per half year. Thus, the function will take two parameters: the number of cases per year and an arbitrary divisor. You also need to use it — run it on the data. Since not all rows contain a number of cases, you will need to filter out those that do not have a numerical value (≠ ''). --/
+
+drop function if exists calc_quantity_illnesses;
+
+delimiter //
+
+create function calc_quantity_illnesses(quantity double, divisor int)
+returns double
+deterministic
+no sql
+begin
+declare result double;
+set result = quantity / divisor;
+return result;
+end //
+
+delimiter ;
+
+select calc_quantity_illnesses(1000, 4);
